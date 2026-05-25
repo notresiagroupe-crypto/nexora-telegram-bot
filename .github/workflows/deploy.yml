@@ -1,31 +1,29 @@
-name: Deploy to Railway
+name: NEXORA Telegram Bot 24/7
 
 on:
+  schedule:
+    - cron: '0 */5 * * *'   # Toutes les 5 heures
+  workflow_dispatch:
   push:
     branches: [main]
-  workflow_dispatch:
 
 jobs:
-  deploy:
+  run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 290  # 4h50 max par job
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Test Railway token
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
-        run: |
-          npm install -g @railway/cli
-          echo "Testing token..."
-          railway whoami 2>&1
-          echo "---"
-          echo "Listing projects..."
-          railway list 2>&1
-          echo "---"
-          echo "Status..."
-          railway status 2>&1
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-      - name: Upload logs
-        if: always()
-        run: echo "Done"
+      - name: Install dependencies
+        run: pip install python-telegram-bot==20.7
+
+      - name: Run NEXORA Bot
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        run: python bot.py
