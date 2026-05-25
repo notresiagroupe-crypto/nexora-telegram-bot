@@ -10,9 +10,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Deploy
-        run: |
-          npm install -g @railway/cli
-          railway up --detach 2>&1
+
+      - name: Create Railway project and deploy
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        run: |
+          npm install -g @railway/cli
+
+          # Create project via Railway GraphQL API
+          PROJECT_ID=$(curl -s -X POST https://backboard.railway.app/graphql/v2 \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"mutation { projectCreate(input: {name: \"nexora-telegram-bot\"}) { id } }"}' \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',{}).get('projectCreate',{}).get('id',''))")
+          
+          echo "Project ID: $PROJECT_ID"
+          
+          if [ -z "$PROJECT_ID" ]; then
+            echo "Using existing project via railway link..."
+            echo '{"projectId":"","environmentId":""}' > .railway/config.json || true
+            railway up --detach 2>&1
+          else
+            export RAILWAY_PROJECT_ID=$PROJECT_ID
+            
+            # Set environment variable TELEGRAM_TOKEN in Railway
+            curl -s -X POST https://backboard.railway.app/graphql/v2 \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\":\"mutation { variableUpsert(input: {projectId: \\\"$PROJECT_ID\\\", name: \\\"TELEGRAM_TOKEN\\\", value: \\\"$TELEGRAM_TOKEN\\\"}) }\"}" > /dev/null
+            
+            railway up --detach 2>&1
+          fi
