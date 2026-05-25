@@ -11,26 +11,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
-
-      - name: Show Railway version
-        run: railway --version
-
-      - name: Deploy
+      - name: Install & Deploy
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Project: $RAILWAY_PROJECT_ID"
-          railway status 2>&1
-          railway up --service nexora-bot --detach 2>&1
-
-      - name: Write output on failure
-        if: failure()
-        run: |
-          railway status 2>&1 > /tmp/err.txt || true
-          cat /tmp/err.txt
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+          npm install -g @railway/cli
+          
+          {
+            echo "=== RAILWAY VERSION ==="
+            railway --version
+            echo "=== RAILWAY STATUS ==="
+            railway status
+            echo "=== RAILWAY UP ==="
+            railway up --service nexora-bot --detach
+          } 2>&1 | tee output.txt
+          
+          EXIT=${PIPESTATUS[0]}
+          
+          # Commit output to repo so we can read it
+          git config user.email "ci@nexora.fr"
+          git config user.name "CI"
+          git add output.txt
+          git commit -m "ci: deploy output" || true
+          git push https://x-access-token:$GH_TOKEN@github.com/notresiagroupe-crypto/nexora-telegram-bot.git HEAD:main || true
+          
+          exit $EXIT
