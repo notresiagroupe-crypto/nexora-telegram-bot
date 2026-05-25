@@ -11,19 +11,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy to Railway
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Show Railway version
+        run: railway --version
+
+      - name: Deploy
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
         run: |
-          npm install -g @railway/cli
-          
-          # Set env var TELEGRAM_TOKEN in Railway
-          railway variables set \
-            TELEGRAM_TOKEN=${{ secrets.TELEGRAM_TOKEN }} \
-            --service nexora-bot 2>&1 || true
-          
-          # Deploy
-          railway up \
-            --service nexora-bot \
-            --detach 2>&1
+          echo "Project: $RAILWAY_PROJECT_ID"
+          railway status 2>&1
+          railway up --service nexora-bot --detach 2>&1
+
+      - name: Write output on failure
+        if: failure()
+        run: |
+          railway status 2>&1 > /tmp/err.txt || true
+          cat /tmp/err.txt
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
