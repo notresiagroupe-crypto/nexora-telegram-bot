@@ -2,7 +2,7 @@ name: NEXORA Telegram Bot 24/7
 
 on:
   schedule:
-    - cron: '0 */5 * * *'   # Toutes les 5 heures
+    - cron: '0 */5 * * *'
   workflow_dispatch:
   push:
     branches: [main]
@@ -10,20 +10,47 @@ on:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 290  # 4h50 max par job
+    timeout-minutes: 290
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Install
         run: pip install python-telegram-bot==20.7
 
-      - name: Run NEXORA Bot
+      - name: Run Bot
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-        run: python bot.py
+        run: |
+          python -c "
+import os, sys
+token = os.environ.get('TELEGRAM_TOKEN','')
+print('Token present:', bool(token))
+print('Token starts with:', token[:20] if token else 'EMPTY')
+" 2>&1
+          python bot.py 2>&1
+
+      - name: On failure - save error
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        run: |
+          python -c "
+import os, traceback, sys
+token = os.environ.get('TELEGRAM_TOKEN','')
+print('=== DEBUG ===')
+print('Token present:', bool(token))
+try:
+    import telegram
+    print('python-telegram-bot version:', telegram.__version__)
+    bot = telegram.Bot(token=token)
+    print('Bot created OK')
+except Exception as e:
+    print('ERROR:', traceback.format_exc())
+" 2>&1 | tee error.txt
+          cat error.txt
