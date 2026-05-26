@@ -1,41 +1,30 @@
 name: NEXORA Telegram Bot 24/7
 
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: '0 */5 * * *'
   workflow_dispatch:
-  push:
-    branches: [main]
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     timeout-minutes: 290
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - run: pip install python-telegram-bot==20.7
 
-      - name: Install
-        run: pip install python-telegram-bot==20.7
-
-      - name: Verify token
+      - name: Test token first
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-        run: |
-          python3 -c "
-import os
-t = os.environ.get('TELEGRAM_TOKEN','')
-print('Token length:', len(t))
-print('Token preview:', t[:15] + '...' if t else 'MISSING')
-if not t:
-    exit(1)
-"
+        run: python3 test_bot.py
 
-      - name: Run Bot
+      - name: Run full bot
+        if: success()
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         run: python3 bot.py
