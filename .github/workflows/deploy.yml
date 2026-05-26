@@ -18,12 +18,26 @@ jobs:
           python-version: '3.11'
       - run: pip install python-telegram-bot==20.7
 
-      - name: Test token first
+      - name: Check token via curl
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-        run: python3 test_bot.py
+        run: |
+          echo "=== Testing token ==="
+          RESP=$(curl -s "https://api.telegram.org/bot${TELEGRAM_TOKEN}/getMe")
+          echo "$RESP"
+          echo "$RESP" > /tmp/token_check.txt
+          # Check if OK
+          echo "$RESP" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+if d.get('ok'):
+    print('✅ Token valid! Bot:', d['result']['username'])
+else:
+    print('❌ Token INVALID:', d.get('description'))
+    sys.exit(1)
+"
 
-      - name: Run full bot
+      - name: Run Bot
         if: success()
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
