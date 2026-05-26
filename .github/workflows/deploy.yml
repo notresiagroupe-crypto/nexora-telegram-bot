@@ -22,35 +22,20 @@ jobs:
       - name: Install
         run: pip install python-telegram-bot==20.7
 
+      - name: Verify token
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        run: |
+          python3 -c "
+import os
+t = os.environ.get('TELEGRAM_TOKEN','')
+print('Token length:', len(t))
+print('Token preview:', t[:15] + '...' if t else 'MISSING')
+if not t:
+    exit(1)
+"
+
       - name: Run Bot
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-        run: |
-          python -c "
-import os, sys
-token = os.environ.get('TELEGRAM_TOKEN','')
-print('Token present:', bool(token))
-print('Token starts with:', token[:20] if token else 'EMPTY')
-" 2>&1
-          python bot.py 2>&1
-
-      - name: On failure - save error
-        if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-        run: |
-          python -c "
-import os, traceback, sys
-token = os.environ.get('TELEGRAM_TOKEN','')
-print('=== DEBUG ===')
-print('Token present:', bool(token))
-try:
-    import telegram
-    print('python-telegram-bot version:', telegram.__version__)
-    bot = telegram.Bot(token=token)
-    print('Bot created OK')
-except Exception as e:
-    print('ERROR:', traceback.format_exc())
-" 2>&1 | tee error.txt
-          cat error.txt
+        run: python3 bot.py
