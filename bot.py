@@ -1,267 +1,131 @@
-import os
-import logging
+import os, asyncio, logging, smtplib
+from datetime import datetime
+from email.mime.text import MIMEText
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler,
-    MessageHandler, filters, ContextTypes, ConversationHandler
-)
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+TOKEN = os.getenv("TELEGRAM_TOKEN", "")
+GMAIL = os.getenv("GMAIL_EMAIL", "zambolionel043@gmail.com")
+GMAIL_PWD = os.getenv("GMAIL_APP_PASSWORD", "")
 
-TOKEN = os.getenv("TELEGRAM_TOKEN", "8622529595:AAHhDpdwsFgTXwnerXPe1qqCEdz6h2obsxE")
-LIONEL_CHAT_ID = os.getenv("LIONEL_CHAT_ID", "")  # Ton ID Telegram perso
-
-# États conversation
-SERVICE, BUDGET, DESCRIPTION, CONTACT = range(4)
-
-# ─────────────────────────────────────────
-# /start
-# ─────────────────────────────────────────
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    name = update.effective_user.first_name
-    keyboard = [
-        [InlineKeyboardButton("🌐 Site Web", callback_data="svc_site"),
-         InlineKeyboardButton("🤖 Automatisation IA", callback_data="svc_ia")],
-        [InlineKeyboardButton("📱 Stratégie Digitale", callback_data="svc_digital"),
-         InlineKeyboardButton("🔍 Prospection Auto", callback_data="svc_prosp")],
-        [InlineKeyboardButton("💼 Voir le Portfolio", callback_data="portfolio")],
-        [InlineKeyboardButton("💬 Parler à Lionel", callback_data="contact")],
+    kb = [
+        [InlineKeyboardButton("🔍 Lancer la prospection", callback_data="run")],
+        [InlineKeyboardButton("📊 Stats CRM", callback_data="stats")],
+        [InlineKeyboardButton("📧 Tester email", callback_data="email")],
+        [InlineKeyboardButton("📋 Rapport maintenant", callback_data="report")],
+        [InlineKeyboardButton("ℹ️ Statut système", callback_data="status")],
     ]
     await update.message.reply_text(
-        f"👋 Bonjour {name} !\n\n"
-        f"Bienvenue chez *NEXORA Studio* — Agence Web & IA à Bordeaux.\n\n"
-        f"Je suis le bot assistant de Lionel 🚀\n"
-        f"Que puis-je faire pour vous ?",
+        "🚀 *NEXORA Prospection Bot*\n\n"
+        "Système de prospection automatique.\n"
+        "Rapport quotidien à 7h00 → zambolionel043@gmail.com",
         parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=InlineKeyboardMarkup(kb)
     )
 
-# ─────────────────────────────────────────
-# Portfolio
-# ─────────────────────────────────────────
-async def portfolio(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    keyboard = [
-        [InlineKeyboardButton("🍽️ Restaurant Gastronomique", url="https://notresiagroupe-crypto.github.io/nexora/demos/restaurant.html")],
-        [InlineKeyboardButton("✨ Institut Beauté", url="https://notresiagroupe-crypto.github.io/nexora/demos/beaute.html")],
-        [InlineKeyboardButton("💪 Coach Sportif", url="https://notresiagroupe-crypto.github.io/nexora/demos/coach.html")],
-        [InlineKeyboardButton("🔧 Artisan Plombier", url="https://notresiagroupe-crypto.github.io/nexora/demos/artisan.html")],
-        [InlineKeyboardButton("📚 RévisionIA (App Web)", url="https://notresiagroupe-crypto.github.io/revi/")],
-        [InlineKeyboardButton("🌐 Site NEXORA Complet", url="https://notresiagroupe-crypto.github.io/nexora/")],
-        [InlineKeyboardButton("◀️ Retour", callback_data="back")],
+async def status_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query; await q.answer()
+    now = datetime.now().strftime("%d/%m/%Y %H:%M")
+    text = (f"ℹ️ *Statut système*\n\n🕐 {now}\n"
+            f"✅ Bot actif\n{'✅' if GMAIL_PWD else '❌'} Gmail configuré\n"
+            f"✅ Secteurs : Restaurant · Beauté · Boutique\n✅ Zone : Bordeaux")
+    await q.edit_message_text(text, parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️", callback_data="menu")]]))
+
+async def run_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query; await q.answer()
+    await q.edit_message_text("⏳ *Prospection en cours...*\nCela peut prendre quelques minutes.", parse_mode="Markdown")
+    try:
+        from scrapers.google_scraper import find_all_prospects
+        from scrapers.instagram_scraper import find_instagram_prospects, find_linkedin_prospects, find_malt_prospects
+        from messaging.email_sender import send_prospection_emails
+        from storage.base44_storage import save_all_prospects, get_prospects_stats
+        from reports.daily_report import send_daily_report
+        google_p = find_all_prospects(limit_per_sector=5)
+        _, sent, _ = send_prospection_emails(google_p, max_emails=10)
+        insta_p = find_instagram_prospects()
+        linkedin_p = find_linkedin_prospects()
+        malt_p = find_malt_prospects()
+        save_all_prospects(google_p + insta_p + linkedin_p + malt_p)
+        stats = get_prospects_stats()
+        send_daily_report(stats, google_p, insta_p, linkedin_p, malt_p)
+        text = (f"✅ *Prospection terminée !*\n\n"
+                f"📧 Emails envoyés : {sent}\n"
+                f"📸 Instagram : {len(insta_p)}\n"
+                f"💼 LinkedIn : {len(linkedin_p)}\n"
+                f"🧑‍💻 Malt : {len(malt_p)}\n"
+                f"📊 CRM total : {stats.get('total',0)} prospects\n"
+                f"📬 Rapport envoyé sur Gmail")
+    except Exception as e:
+        text = f"❌ Erreur : {str(e)[:200]}"
+    await ctx.bot.send_message(q.message.chat_id, text, parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Menu", callback_data="menu")]]))
+
+async def stats_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query; await q.answer()
+    try:
+        from storage.base44_storage import get_prospects_stats
+        s = get_prospects_stats()
+        text = (f"📊 *Stats CRM*\n\n👥 Total : {s.get('total',0)}\n"
+                f"📧 Emails envoyés : {s.get('emailed',0)}\n"
+                f"💬 Réponses : {s.get('replied',0)}\n"
+                f"✍️ Signés : {s.get('signed',0)}\n"
+                f"📈 Taux : {s.get('conversion_rate','0%')}")
+    except Exception as e:
+        text = f"❌ {str(e)[:100]}"
+    await q.edit_message_text(text, parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️", callback_data="menu")]]))
+
+async def email_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query; await q.answer()
+    try:
+        msg = MIMEText("✅ Test NEXORA Bot - Système opérationnel !")
+        msg["Subject"] = "✅ NEXORA Bot - Test OK"
+        msg["From"] = GMAIL; msg["To"] = GMAIL
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+            s.login(GMAIL, GMAIL_PWD); s.sendmail(GMAIL, GMAIL, msg.as_string())
+        text = "✅ *Email de test envoyé !*\nVérifie ta boîte Gmail."
+    except Exception as e:
+        text = f"❌ Erreur email : {str(e)[:200]}"
+    await q.edit_message_text(text, parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️", callback_data="menu")]]))
+
+async def report_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query; await q.answer()
+    try:
+        from storage.base44_storage import get_prospects_stats
+        from reports.daily_report import send_daily_report
+        send_daily_report(get_prospects_stats(), [], [], [], [])
+        text = "✅ *Rapport envoyé !*\nVérifie zambolionel043@gmail.com"
+    except Exception as e:
+        text = f"❌ {str(e)[:200]}"
+    await q.edit_message_text(text, parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️", callback_data="menu")]]))
+
+async def menu_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query; await q.answer()
+    kb = [
+        [InlineKeyboardButton("🔍 Lancer la prospection", callback_data="run")],
+        [InlineKeyboardButton("📊 Stats CRM", callback_data="stats")],
+        [InlineKeyboardButton("📧 Tester email", callback_data="email")],
+        [InlineKeyboardButton("📋 Rapport maintenant", callback_data="report")],
+        [InlineKeyboardButton("ℹ️ Statut système", callback_data="status")],
     ]
-    await q.edit_message_text(
-        "💼 *Portfolio NEXORA Studio*\n\n"
-        "Cliquez pour tester chaque site en live 👇",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    await q.edit_message_text("🚀 *NEXORA Prospection Bot*\n\nQue veux-tu faire ?",
+        parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb))
 
-# ─────────────────────────────────────────
-# Services
-# ─────────────────────────────────────────
-SERVICES_INFO = {
-    "svc_site": {
-        "title": "🌐 Site Web & Landing Page",
-        "desc": (
-            "• Design moderne sur mesure\n"
-            "• Mobile-first + SEO optimisé\n"
-            "• Formulaire de contact intégré\n"
-            "• Hébergement inclus 1 an\n"
-            "• Livraison en 7-10 jours\n\n"
-            "*À partir de 500€*"
-        )
-    },
-    "svc_ia": {
-        "title": "🤖 Automatisation IA",
-        "desc": (
-            "• Chatbot intelligent pour votre site\n"
-            "• Automatisation emails/réponses\n"
-            "• Workflows n8n / Make / Zapier\n"
-            "• Agents IA sur mesure\n"
-            "• Support et formation inclus\n\n"
-            "*À partir de 800€*"
-        )
-    },
-    "svc_digital": {
-        "title": "📱 Stratégie Digitale",
-        "desc": (
-            "• Gestion Instagram & LinkedIn\n"
-            "• Création de contenu avec IA\n"
-            "• Publicité Meta/Google\n"
-            "• Rapport mensuel de performance\n\n"
-            "*À partir de 300€/mois*"
-        )
-    },
-    "svc_prosp": {
-        "title": "🔍 Prospection Automatique",
-        "desc": (
-            "• Recherche de leads automatique\n"
-            "• Messages personnalisés par secteur\n"
-            "• Multi-canaux : Google, Instagram,\n"
-            "  LinkedIn, Malt\n"
-            "• Rapport quotidien à 7h00\n"
-            "• CRM intégré\n\n"
-            "*À partir de 600€*"
-        )
-    }
-}
-
-async def service_detail(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    info = SERVICES_INFO.get(q.data, {})
-    keyboard = [
-        [InlineKeyboardButton("🚀 Demander un devis", callback_data=f"devis_{q.data}")],
-        [InlineKeyboardButton("◀️ Retour", callback_data="back")],
-    ]
-    await q.edit_message_text(
-        f"*{info['title']}*\n\n{info['desc']}",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-# ─────────────────────────────────────────
-# Devis (conversation)
-# ─────────────────────────────────────────
-async def start_devis(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    ctx.user_data["service"] = q.data.replace("devis_svc_", "")
-    keyboard = [
-        [InlineKeyboardButton("< 500€", callback_data="b_500"),
-         InlineKeyboardButton("500€ - 1000€", callback_data="b_1000")],
-        [InlineKeyboardButton("1000€ - 2000€", callback_data="b_2000"),
-         InlineKeyboardButton("> 2000€", callback_data="b_plus")],
-    ]
-    await q.edit_message_text(
-        "💰 *Quel est votre budget approximatif ?*",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-    return BUDGET
-
-async def budget_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    ctx.user_data["budget"] = q.data.replace("b_", "")
-    await q.edit_message_text(
-        "📝 *Décrivez votre projet en quelques lignes :*\n\n"
-        "_Secteur d'activité, objectifs, délai souhaité..._",
-        parse_mode="Markdown"
-    )
-    return DESCRIPTION
-
-async def description_received(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    ctx.user_data["description"] = update.message.text
-    await update.message.reply_text(
-        "📞 *Votre email ou numéro de téléphone ?*\n\n"
-        "_Lionel vous répondra dans les 24h_",
-        parse_mode="Markdown"
-    )
-    return CONTACT
-
-async def contact_received(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    ctx.user_data["contact"] = update.message.text
-
-    # Résumé pour l'utilisateur
-    await update.message.reply_text(
-        "✅ *Demande de devis envoyée !*\n\n"
-        f"📋 Service : {ctx.user_data.get('service', '?')}\n"
-        f"💰 Budget : {ctx.user_data.get('budget', '?')}€\n"
-        f"📝 Projet : {ctx.user_data.get('description', '?')[:100]}\n\n"
-        "Lionel vous contacte sous 24h. Merci ! 🙏\n\n"
-        "🌐 nexorastudio.netlify.app",
-        parse_mode="Markdown"
-    )
-
-    # Notification à Lionel
-    if LIONEL_CHAT_ID:
-        notif = (
-            f"🚨 *NOUVEAU DEVIS*\n\n"
-            f"👤 {user.full_name} (@{user.username or 'sans username'})\n"
-            f"📋 Service : {ctx.user_data.get('service')}\n"
-            f"💰 Budget : {ctx.user_data.get('budget')}€\n"
-            f"📝 {ctx.user_data.get('description')}\n"
-            f"📞 Contact : {ctx.user_data.get('contact')}"
-        )
-        await ctx.bot.send_message(chat_id=LIONEL_CHAT_ID, text=notif, parse_mode="Markdown")
-
-    return ConversationHandler.END
-
-# ─────────────────────────────────────────
-# Contact direct
-# ─────────────────────────────────────────
-async def contact(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    keyboard = [
-        [InlineKeyboardButton("✉️ Email", url="mailto:zambolionel043@gmail.com")],
-        [InlineKeyboardButton("📸 Instagram", url="https://instagram.com/id_lionel")],
-        [InlineKeyboardButton("💼 Malt", url="https://malt.fr/profile/lionelmanga")],
-        [InlineKeyboardButton("◀️ Retour", callback_data="back")],
-    ]
-    await q.edit_message_text(
-        "💬 *Contacter Lionel — NEXORA Studio*\n\n"
-        "📍 Bordeaux, France\n"
-        "⏱ Réponse sous 24h\n"
-        "🎓 Consultation gratuite de 30 min",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-# ─────────────────────────────────────────
-# Retour menu principal
-# ─────────────────────────────────────────
-async def back(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    keyboard = [
-        [InlineKeyboardButton("🌐 Site Web", callback_data="svc_site"),
-         InlineKeyboardButton("🤖 Automatisation IA", callback_data="svc_ia")],
-        [InlineKeyboardButton("📱 Stratégie Digitale", callback_data="svc_digital"),
-         InlineKeyboardButton("🔍 Prospection Auto", callback_data="svc_prosp")],
-        [InlineKeyboardButton("💼 Voir le Portfolio", callback_data="portfolio")],
-        [InlineKeyboardButton("💬 Parler à Lionel", callback_data="contact")],
-    ]
-    await q.edit_message_text(
-        "🚀 *NEXORA Studio* — Que puis-je faire pour vous ?",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Annulé. Tapez /start pour recommencer.")
-    return ConversationHandler.END
-
-# ─────────────────────────────────────────
-# MAIN
-# ─────────────────────────────────────────
 def main():
+    print(f"🤖 NEXORA Bot démarré — {datetime.now().strftime('%d/%m %H:%M')}")
     app = Application.builder().token(TOKEN).build()
-
-    # Conversation devis
-    conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(start_devis, pattern="^devis_")],
-        states={
-            BUDGET: [CallbackQueryHandler(budget_chosen, pattern="^b_")],
-            DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, description_received)],
-            CONTACT: [MessageHandler(filters.TEXT & ~filters.COMMAND, contact_received)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(portfolio, pattern="^portfolio$"))
-    app.add_handler(CallbackQueryHandler(contact, pattern="^contact$"))
-    app.add_handler(CallbackQueryHandler(back, pattern="^back$"))
-    app.add_handler(CallbackQueryHandler(service_detail, pattern="^svc_"))
-    app.add_handler(conv)
-
-    print("🤖 NEXORA Bot démarré...")
+    app.add_handler(CallbackQueryHandler(status_cb, pattern="^status$"))
+    app.add_handler(CallbackQueryHandler(run_cb, pattern="^run$"))
+    app.add_handler(CallbackQueryHandler(stats_cb, pattern="^stats$"))
+    app.add_handler(CallbackQueryHandler(email_cb, pattern="^email$"))
+    app.add_handler(CallbackQueryHandler(report_cb, pattern="^report$"))
+    app.add_handler(CallbackQueryHandler(menu_cb, pattern="^menu$"))
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
