@@ -129,7 +129,7 @@ def get_malt_message(first_name, project_description=""):
 
 Je suis Lionel, développeur web et expert IA basé à Bordeaux (profil NEXORA Studio).
 
-{'J\'ai vu votre annonce concernant : ' + project_description + '.' if project_description else 'Je suis disponible pour de nouveaux projets web et automatisation IA.'}
+{("J'ai vu votre annonce concernant : " + project_description + ".") if project_description else "Je suis disponible pour de nouveaux projets web et automatisation IA."}
 
 Mon stack : React, Next.js, Python, API IA (Claude, OpenAI), automatisation n8n/Make.
 
